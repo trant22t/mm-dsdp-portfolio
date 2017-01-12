@@ -1,0 +1,204 @@
+---
+title: "STAT495 (Advanced Data Analysis): College Scorecard Executive Summary"
+author: "Group D: Olivia Xu, Stephany Flores-Ramos, Tam Tran-The"
+date: "October 30, 2016"
+output: 
+  pdf_document:
+    fig_height: 3
+    fig_width: 5
+    fig_caption: yes
+    keep_tex: yes
+  html_document:
+    fig_height: 3
+    fig_width: 5
+  word_document:
+    fig_height: 3
+    fig_width: 5
+header-includes: \usepackage{float}
+---
+
+```{r, setup, include=FALSE}
+library(mosaic) 
+# Some customization
+trellis.par.set(theme=theme.mosaic()) # change default color scheme for lattice
+knitr::opts_chunk$set(
+  tidy=FALSE,     # display code as typed
+  size="small")   # slightly smaller font for code
+```
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(mdsr)
+library(ggplot2)
+library(gridExtra)
+library(ggplot2) 
+library(cowplot)
+library(lubridate)
+```
+
+```{r, include=FALSE}
+load("Scorecard04-14.Rda")
+```
+
+### Introduction
+
+#### About Scorecard 
+
+> The College Scorecard dataset is a dataset compiled by the College Board. It contains a vast amount of information about varying types of higher education institutions. Examples of the types of variables contained in this dataset include cost, number of students, student-faculty ratio, debt, region, and many others.
+
+#### Main question
+
+> Our group decided to further explore how faculty salary and retention rate are related among different types of four-year institutions. Because higher education can be incredibly costly, both in time and money, we thought that looking into this relationship could provide some insight for students and administrators alike on how to improve student retention rates (possibly by increasing faculty salaries) and thus improve the college experience for all.
+
+> In our endeavor to answer this main question our group decided to create two new variables to account for the size and type of four-year institution. To do so, we first consolidated the two private institutions categories, "private for profit" and "private for non-profit" to one "private" school category such that the only levels in the `TypeofSchool` variable were "public" and "private" institutions. In addition, we decided to create a categorical size variable based on the range of sizes a school in our dataset could be. In our case, "small" institutions were defined to have fewer than 3,000 students, and "large" institutions were those with more than 3,000 students. It should also be noted that the dataset had data for additional types of institutions, such as two-year and six-year institutions, but we were interested in analyzing factors affecting four-year institutions since that is the type of institutions that most undergraduates attend. 
+
+> We also decided to look at how student retention rate for first time students at four-year institutions changes over the years. Here, the retention rate is calculated as the number of full-time, first-time undergraduates enrolled in the fall term of the current academic year divided by the number of full-time, first-time undergraduates enrolled in the fall of the prior academic year.  Even though the original dataset had information starting from the year 1997, retention rate was not collected until the year 2004. This is the reason we are limited to exploring how the retention rate may be changing only from 2004 to 2014. 
+
+> Finally, the average faculty salary per month variable of interest in our study is calculated as the total salary outlays divided by the number of months worked at the intitution for all full-time nonmedical instructional staff. 
+
+###Descriptive statistics
+
+> Preliminary look at our variables of interest looking at `average faculty salary per month` and `student retention rate` based on `school size` and `school type`
+
+```{r, echo=FALSE}
+get_df <- function(i) {
+  summ <- scfinal2 %>%
+  filter(year==i) %>%
+  group_by(SchoolSize,SchoolType) %>%
+  summarize(mean.RT=mean(RetRate),mean.FacSal=mean(AVGFACSAL), n=n()) %>%
+  unite(school, SchoolSize, SchoolType, sep=" & ")
+  return(summ)
+}
+
+summ04 <- get_df(2004)
+summ14 <- get_df(2014)
+
+summ <- rbind(summ04, summ14) %>%
+  mutate(year = c(2004, 2004, 2004, 2004, 2014, 2014, 2014, 2014))
+```
+
+
+```{r, echo=FALSE}
+sub04 <- scfinal2 %>%
+  filter(year==2004) %>%
+  unite(school, SchoolSize, SchoolType, sep=" & ")
+sub14 <- scfinal2 %>%
+  filter(year==2014)%>%
+  unite(school, SchoolSize, SchoolType, sep=" & ")
+
+p1 <- ggplot(sub04, aes(x=school, y=RetRate, color=school)) +
+  geom_jitter(width=0.5, size=0.4) + 
+  geom_point(data = summ04, mapping = aes(x =school, y=mean.RT), size=30, color="Black", shape="-") +
+  theme(legend.position="none") + 
+  labs(y="Average Student Retention Rate", x="Types of Schools") 
+
+p2 <- ggplot(sub14, aes(x=school, y = RetRate, color=school)) +
+  geom_jitter(width=0.5, size=0.4) + 
+  geom_point(data = summ14, mapping = aes(x =school, y=mean.RT), size=30, color="Black", shape="-") +
+  theme(legend.position="none") + 
+  labs(y="Average Student Retention Rate", x="Types of Schools") 
+
+p3 <- ggplot(sub04, aes(x=school, y=AVGFACSAL, color=school)) +
+  geom_jitter(width=0.5, size=0.4) + 
+  geom_point(data = summ04, mapping = aes(x =school, y=mean.FacSal), size=30, color="Black", shape="-") +
+  theme(legend.position="none") + 
+  labs(y="Average Faculty Salary per Month (in USD)", x="Types of Schools") 
+
+p4 <- ggplot(sub14, aes(x=school, y = AVGFACSAL, color=school)) +
+  geom_jitter(width=0.5, size=0.4) + 
+  geom_point(data = summ14, mapping = aes(x =school, y=mean.FacSal), size=30, color="Black", shape="-") +
+  theme(legend.position="none") + 
+  labs(y="Average Faculty Salary per Month (in USD)", x="Types of Schools") 
+```
+
+
+```{r, echo=FALSE, fig.height=10, fig.width=20, fig.align='center', fig.cap="Scatterplots of Average Student Retention Rate and Average Faculty Salary per Month by Types of Institutions in 2004 and 2014. Black line indicates the mean amount for each type of institution", fig.pos="H"}
+plot1<-plot_grid(p1,p2, p3, p4, ncol = 2, align = 'h',labels=c("Retention Rate 2004", "Retention Rate 2014", "Average Faculty Salary 2004", "Average Faculty Salary 2014"))
+title <- ggdraw() + draw_label("Average Student Retention Rate and Average Faculty Salary\nBy Types of Institutions in 2004 and 2014", size=25, fontface='bold') 
+
+plot_grid(title, plot1, ncol=1, rel_heights=c(0.1, 1)) 
+```
+
+> Based on the figure above, we can see that the mean average faculty salary and retention rate stay relatively the same between the two years 2004 and 2014 with the latter year having a slightly higher mean average faculty salary and retention rate. We can also see that larger schools in general have a higher mean average faculty salary and retention rate. In addition, we see no observable differences in the means between public and private schools.  There is a much larger spread for retention rate and average faculty salary for small and private schools compared to any other school type, which makes sense.  Its difficult to tell which exact school type has the smallest spread, but it looks like large and public school types do (which again, makes sense).  Furthermore, since the amount of observations in the different categories (big and public, big and private, small and public, small and private) are around the same size, we can make comparisons between groups.   
+
+### Visualizing Changes in Retention Rate 
+
+```{r, echo=FALSE,fig.height=4, fig.width=8, fig.align='center', fig.cap="Changes in Average Retention Rate from 2004 to 2014", fig.pos="H"}
+scfinal2$year <- as.character(scfinal2$year)
+privlarge <- filter(scfinal2, SchoolType == "Private" & SchoolSize == "Large")
+privsmall <- filter(scfinal2, SchoolType == "Private" & SchoolSize == "Small")
+publarge <- filter(scfinal2, SchoolType == "Public" & SchoolSize == "Large")
+pubsmall <- filter(scfinal2, SchoolType == "Public" & SchoolSize == "Small")
+
+privlarge1 <- privlarge %>%
+  group_by(year) %>%
+  summarize(meanrr = mean(RetRate))
+type <- rep("Private&Large", each=11)
+privlarge2 <- cbind(privlarge1, type)
+
+privsmall1 <- privsmall %>%
+  group_by(year) %>%
+  summarize(meanrr = mean(RetRate))
+type <- rep("Private&Small", each=11)
+privsmall2 <- cbind(privsmall1, type)
+
+publarge1 <- publarge %>%
+  group_by(year) %>%
+  summarize(meanrr = mean(RetRate))
+type <- rep("Public&Large", each=11)
+publarge2 <- cbind(publarge1, type)
+
+pubsmall1 <- pubsmall %>%
+  group_by(year) %>%
+  summarize(meanrr = mean(RetRate))
+type <- rep("Public&Small", each=11)
+pubsmall2 <- cbind(pubsmall1, type)
+
+avall <- rbind(pubsmall2, publarge2, privsmall2, privlarge2)
+
+ggplot(data = avall, aes(x=year, y=meanrr, group = type)) + 
+  geom_point()  + 
+  geom_line() + 
+  aes(colour=type) + 
+  theme(legend.position="right") + 
+  labs(title="Change in Average Retention Rate from 2004-2014", x="Year", y="Average retention rate")
+```
+
+> As we can tell from Figure 3, average retention rate has not necessarily increased or gotten better for some schools.  For large and small public schools (green and pink, respectively), the average retention rate showed increase from 2004 to 2009, a slight drop from 2009 to 2012, and then started to increase again from 2012 to 2014.  A similiar patten can also be observed among small and large private schools (blue and purple, respectively) except that instead of mean retention rate increasing from 2004 to 2009, a noticeable drop in retention rate is seen from 2004 to 2012.   Finally, supporting what we saw earlier, the mean retention rate for large schools is higher than for public schools.
+
+### Visualizing The Relationship between Retention Rate and Faculty Salary
+
+```{r, echo=FALSE, fig.height=12, fig.width=12, fig.align='center', fig.pos="H"}
+scfinal2 <- scfinal2 %>%
+  mutate(year2=as.numeric(year), years=cut(year2, breaks=c(2002.5,2006.5,2010.5,2014.5),
+                                                 labels=c("2004-2006","2007-2010","2011-2014")))
+
+mixed_plot <- ggplot(data = scfinal2, aes(x=AVGFACSAL, y=RetRate)) + 
+  geom_point(size=0.3, alpha=0.4)  +
+  aes(colour=years) + facet_grid(SchoolSize~SchoolType) + 
+  stat_smooth(method=loess) + 
+  labs(title="Relationship between Student Retention Rate \nand Average Faculty Salary Based on School Size and School Type", 
+       x = "Average Faculty Salary per Month (in USD)", 
+       y = "Student Retention Rate") +  
+  theme(legend.position="right", 
+        plot.title=element_text(size=25),
+        axis.title=element_text(size=22),
+        axis.text=element_text(size=18),
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=15)) + 
+  coord_cartesian(xlim=c(0, 15300), ylim=c(0, 1.2)) 
+```
+
+```{r,echo=FALSE, fig.height=12, fig.width=12, fig.cap="The Relationship between Retention Rate and Average Faculty Salary per Month Based on School Size and School Type", fig.pos="H"}
+mixed_plot + background_grid(major="xy", minor="none")
+```
+
+> From the graph below (Figure 4), we notice several details. Firstly, it appears that the slope of retention rate versus average faculty salary is less steep with more recent years. We can also see that private schools have a wider range in faculty salaries, and all the regressions comparing average faculty salary to retention rate follow a non-linear trend. Furthermore, small public schools seem to fare the worst in terms of retention rate.  The slope for these types of school is not quite as steep as for the other three facets and so retention rate does not seem to be increasing as fast compared to the other three types of schools as average faculty salary increases. 
+
+### Implications
+
+> There are several takeaways from our plots. Firstly, though our third plot shows there is some fluctation in the mean retention rate from 2004-2014, overall this fluctuation is insignificant. In the fourth plot we observe that the upper bound of average faculty salary in 2014 does seem to be larger than in 2004.  Private schools level out at a retention rate close to 1.0 at a lower average faculty salary than public schools.  Large public schools have a relatively linear relationship between average faculty salary and retention rate.  And finally, small public schools see the least amount of growth in retention rate as average faculty salary increases.
+
+> So basically, this shows that an increase in average faculty salary is possibly correlated with higher retention rates regardless of the size and type of school. This data also shows us that public school (of any size) should possibly consider increasing their facultys' salary to have the same correlation on retention rate as a private school would with a lower average faculty salary. On the flip side, private schools can use this information to determine if salary cutbacks are appropriate if decreasing their average faculty salary relative to the mean faculty salary of a public school will not lead to a noticeable drop in retention rate. 

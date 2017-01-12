@@ -1,0 +1,575 @@
+---
+title: "Sentiment Analysis of Amazon Reviews (Raw Code)"
+author: "Tam Tran-The and Jordan Browning"
+date: ""
+output: 
+  pdf_document:
+    fig_height: 3
+    fig_width: 5
+  html_document:
+    fig_height: 3
+    fig_width: 5
+  word_document:
+    fig_height: 3
+    fig_width: 5
+---
+
+```{r, setup, include=FALSE}
+require(mosaic)   # Load additional packages here 
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+trellis.par.set(theme=theme.mosaic()) # change default color scheme for lattice
+knitr::opts_chunk$set(
+  tidy=FALSE,     # display code as typed
+  size="small")   # slightly smaller font for code
+```
+
+# Scrape Amazon
+
+```{r}
+#Parse Amazon html pages for data
+amazon_scraper <- function(doc, reviewer = T, delay = 0){
+  
+  if(!"pacman" %in% installed.packages()[,"Package"]) install.packages("pacman")
+  pacman::p_load_gh("trinker/sentimentr")
+  pacman::p_load(RCurl, XML, dplyr, stringr, rvest, audio)
+  
+  sec = 0
+  if(delay < 0) warning("delay was less than 0: set to 0")
+  if(delay > 0) sec = max(0, delay + runif(1, -1, 1))
+  
+  #Remove all white space
+  trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+  
+  title <- doc %>%
+    html_nodes("#cm_cr-review_list .a-color-base") %>%
+    html_text()
+  
+  author <- doc %>%
+    html_nodes(".review-byline .author") %>%
+    html_text()
+  
+  date <- doc %>%
+    html_nodes("#cm_cr-review_list .review-date") %>%
+    html_text() %>% 
+    gsub(".*on ", "", .)
+  
+  ver.purchase <- doc%>%
+    html_nodes(".review-data.a-spacing-mini") %>%
+    html_text() %>%
+    grepl("Verified Purchase", .) %>%
+    as.numeric()
+
+  format <- doc %>% 
+    html_nodes(".review-data.a-spacing-mini") %>% 
+    html_text() %>%
+    gsub("Color: |\\|.*|Verified.*", "", .)
+    #if(length(format) == 0) format <- NA
+  
+  stars <- doc %>%
+    html_nodes("#cm_cr-review_list  .review-rating") %>%
+    html_text() %>%
+    str_extract("\\d") %>%
+    as.numeric()
+  
+  comments <- doc %>%
+    html_nodes("#cm_cr-review_list .review-text") %>%
+    html_text() 
+  
+  helpful <- doc %>%
+    html_nodes(".cr-vote-buttons .a-color-secondary") %>%
+    html_text() %>%
+    str_extract("[:digit:]+|One") %>%
+    gsub("One", "1", .) %>%
+    as.numeric()
+  
+  if(reviewer == T){
+    
+    rver_url <- doc %>%
+      html_nodes(".review-byline .author") %>%
+      html_attr("href") %>%
+      gsub("/ref=cm_cr_othr_d_pdp\\?ie=UTF8", "", .) %>%
+      gsub("/gp/pdp/profile/", "", .) %>%
+      paste0("https://www.amazon.com/gp/cdp/member-reviews/",.) 
+    
+    #average rating of past 10 reviews
+    rver_avgrating_10 <- rver_url %>%
+      sapply(., function(x) {
+          read_html(x) %>%
+          html_nodes(".small span img") %>%
+          html_attr("title") %>%
+          gsub("out of.*|stars", "", .) %>%
+          as.numeric() %>%
+          mean(na.rm = T)
+      }) %>% as.numeric()
+  
+    rver_prof <- rver_url %>%
+      sapply(., function(x) 
+        read_html(x) %>%
+          html_nodes("div.small, td td td .tiny") %>%
+          html_text()
+      )
+    
+    rver_numrev <- rver_prof %>%
+      lapply(., function(x)
+        gsub("\n  Customer Reviews: |\n", "", x[1])
+      ) %>% as.numeric()
+    
+    rver_numhelpful <- rver_prof %>%
+      lapply(., function(x)
+        gsub(".*Helpful Votes:|\n", "", x[2]) %>%
+          trim()
+      ) %>% as.numeric()
+    
+    rver_rank <- rver_prof %>%
+      lapply(., function(x)
+        gsub(".*Top Reviewer Ranking:|Helpful Votes:.*|\n", "", x[2]) %>%
+          removePunctuation() %>%
+          trim()
+      ) %>% as.numeric()
+    
+    df <- data.frame(title, date, ver.purchase, format, stars, comments, helpful,
+                     rver_url, rver_avgrating_10, rver_numrev, rver_numhelpful, rver_rank, stringsAsFactors = F)
+  
+  } else df <- data.frame(title, author, date, ver.purchase, format, stars, comments, helpful, stringsAsFactors = F)
+  
+  return(df)
+}
+```
+
+```{r}
+require(XML)
+require(dplyr)
+require(stringr)
+require(rvest)
+
+#Remove all white space
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+
+prod_code = "B0043WCH66"
+url <- paste0("https://www.amazon.com/dp/", prod_code)
+doc <- read_html(url)
+
+#obtain the text in the node, remove "\n" from the text, and remove white space
+prod <- html_nodes(doc, "#productTitle") %>% html_text() %>% gsub("\n", "", .) %>% trim()
+prod
+```
+
+```{r}
+#Source funtion to Parse Amazon html pages for data
+source("https://raw.githubusercontent.com/rjsaito/Just-R-Things/master/Text%20Mining/amazonscraper.R")
+
+pages <- 10
+
+reviews_all <- NULL
+for(page_num in 1:pages){
+  url <- paste0("http://www.amazon.com/product-reviews/",prod_code,"/?pageNumber=", page_num)
+  doc <- read_html(url)
+
+  reviews <- amazon_scraper(doc, reviewer = F, delay = 2)
+  reviews_all <- rbind(reviews_all, cbind(prod, reviews))
+}
+```
+
+# Data Wrangling
+```{r}
+library(rjson)
+library(jsonlite)
+
+#Import data
+clothing_file <- "Clothing_Shoes_and_Jewelry_5.json"
+clothing <- stream_in(file(clothing_file))
+
+library(dplyr)
+library(mosaic)
+
+#only take products with 1000+ reviews
+#count number of reviews for each product 
+num_clothing <- clothing %>%
+  group_by(asin) %>%
+  summarize(count = n()) %>%
+  filter(count >= 197) %>%
+  arrange(desc(count)) 
+
+#add product names -- issues with 2 and 4
+name <- c("Owl Pendant Long Chain Necklace", "Printed Brushed Leggings", 
+          "Long Sleeve Skull T Shirts", 
+          "Skechers Performance Women's Go Walk Slip-On Walking Shoe", 
+          "Champion Women's Unwind Sport Slip-On", 
+          "Leegoal Retro Peacock Crystal Necklace Pendant Jewelry", 
+          "Glamorise Women's No-Bounce Full-Support Sport Bra", 
+          "SE JT6221 16-Piece Watch Repair Tool Kit", 
+          "Levi's Men's 501 Original-Fit Jean", 
+          "ExOfficio Men's Give-N-Go Boxer Brief", 
+          "leegoal Vintage Steampunk Nautical Style Antiqued Bronze Octopus Necklace")
+
+num_clothing <- cbind(num_clothing, names)
+
+clothing <- left_join(clothing, num_clothing, by = "asin") 
+
+#we have to filter again because we merged with the whole dataset, so we had even those products that won't be included
+clothing <- filter(clothing, count >= 197)
+
+#save data
+save(clothing, file="clothing.Rda")
+load("clothing.Rda")
+```
+
+```{r}
+#Sports data
+sports_file <- "Sports_and_Outdoors_5.json"
+sports <- stream_in(file(sports_file))
+
+#count number of reviews for each product
+num_sports <- sports %>%
+  group_by(asin) %>%
+  summarize(count = n()) %>%
+  filter(count >= 359) %>%
+  arrange(desc(count))
+
+#add product names -- issues 7, 8, 9
+name <- c("Butler Creek Maglula UpLULA Magazine Speed Loader 9mm", 
+          "Howard Leight by Honeywell Impact Sport Sound Amplification Electronic Earmuff",
+          "Rothco 550lb. Type III Nylon Paracord", 
+          "SE FS374 All-Weather Emergency 2-IN-1 Fire Starter & Magnesium Fuel Bar",
+          "Maurice Sporting Goods 24011 Bore Snake Rifle Cleaner, M16 - .22-Caliber", 
+          "SET Tactical Weapon Mount", "Pinty 3 in 1 Tactical 3-9X40 Red Green Mil-Dot
+          Illumination Reticle Riflescope Scope Combo Sniper", 
+          "TITAN Two-Sided Emergency Mylar Survival Blankets, 5-Pack", 
+          "Maglula BabyUpLULA .22LR-.380ACP Pistol Magazine Loader Polymer", 
+          "UTG Tactical OP Bipod, Rubber Feet, Center Height 8.3-12.7")
+
+num_sports <- cbind(num_sports, names2)
+
+sports <- left_join(sports, num_sports, by = "asin") 
+
+#we have to filter again because we merged with the whole dataset, so we had even those products that won't be included
+sports <- filter(sports, count >= 359)
+
+#save data
+save(sports, file="sports.Rda")
+load("sports.Rda")
+```
+
+```{r}
+#Health data
+health_file <- "Health_and_Personal_Care_5.json"
+health <- stream_in(file(health_file))
+
+#count number of reviews for each product
+num_health <- health %>%
+  group_by(asin) %>%
+  summarize(count = n()) %>%
+  filter(count >= 422) %>%
+  arrange(desc(count))
+
+#add product names -- issues 1 and 9
+name <- c("Downy Unstopables Fresh In-Wash Scent Booster Fabric Enhancer", 
+          "BlenderBottle Classic Shaker Bottle", 
+          "EatSmart Precision Digital Bathroom Scale with Extra Large Lighted Display",
+          "Panasonic ER-GN30-K Nose Ear & Hair Trimmer", 
+          "Optimum Nutrition 100% Whey Gold Standard", 
+          "Secret Clinical Strength Sport Advanced Solid Antiperspirant & Deodorant",
+          "Merkur Long Handled Safety Razor", 
+          "Secret Clinical Strength Anti-Perspirant Deodorant Advanced Solid, 
+          Light & Fresh Scent", "Tide PODS Ocean Mist HE Turbo Laundry Detergent Pacs",
+          "Eatsmart Precision Plus Digital Bathroom Scale with Ultra Wide Platform and
+          Step-on Technology", "Quilted Northern Ultra Plush Bath Tissue")
+
+num_health <- cbind(num_health, names3)
+
+health <- left_join(health, num_health, by = "asin") 
+
+#we have to filter again because we merged with the whole dataset, so we had even those products that won't be included
+health <- filter(health, count >= 422)
+
+#save data
+save(health, file="health.Rda")
+load("health.Rda")
+```
+
+# Sentiment Analysis (using package by Timothy Jurka)
+
+```{r}
+#Load old data
+load("clothing.Rda")
+load("health.Rda")
+load("sports.Rda")
+```
+
+```{r}
+#Prepare the text for sentiment analysis
+create_matrix <- function(textColumns, language="english", minDocFreq=1, minWordLength=3,
+                          removeNumbers=TRUE, removePunctuation=TRUE, removeSparseTerms=0,
+                          removeStopwords=TRUE, stemWords=FALSE, stripWhitespace=TRUE, 
+                          toLower=TRUE, weighting=weightTf) {
+
+      stem_words <- function(x) {
+        # split the whole text into single words
+        split <- strsplit(x," ")
+        #return the common root/ stem of these words in english 
+        return(wordStem(split[[1]], language=language))
+    }
+
+  #list of operations to tidy the text
+    control <- list(language=language, tolower=toLower, removeNumbers=removeNumbers,
+                    removePunctuation=removePunctuation, stripWhitespace=stripWhitespace,
+                    minWordLength=minWordLength, stopwords=removeStopwords, 
+                    minDocFreq=minDocFreq, weighting=weighting)
+
+      #if the argument stemWords is true, 
+      #add the list of stem_words to the list of operations
+    if (stemWords == TRUE) control <- append(control, list(stemming=stem_words), after=6)
+
+      #transform text into character matrix 
+    trainingColumn <- apply(as.matrix(textColumns), 1, paste, collapse=" ")
+    trainingColumn <- sapply(as.vector(trainingColumn, mode="character"), 
+                             iconv, to="UTF8", sub="byte")
+
+  #transform the given text into a corpus 
+  #and perform all the operations that are defined in the control list
+    corpus <- Corpus(VectorSource(trainingColumn),readerControl=list(language=language))
+    #transform corpus into a DTM matrix object
+    matrix <- DocumentTermMatrix(corpus, control=control);
+      #remove sparse terms (terms whose sparsity is above a certain threshold) 
+    if (removeSparseTerms > 0) matrix <- removeSparseTerms(matrix,removeSparseTerms)
+
+    #since we probably just remove a large object, 
+    #it's safe call garbage collection to prevent R from returning memory to the operating system  
+    gc()
+    #return the resultant matrix
+    return(matrix)
+}
+```
+
+```{r}
+#Emotion classification
+classify_emotion <- function(textColumns, algorithm="bayes", prior=1.0, verbose=FALSE,...) {
+    #tidy up input text and transform it into a DTM 
+  matrix <- create_matrix(textColumns,...)
+  #import the emotions lexicon
+    lexicon <- read.csv("emotions.csv", header=FALSE)
+
+    #create a list of number of words that belong to each category
+    counts <- list(anger=length(which(lexicon[, 2]=="anger")), 
+                   disgust=length(which(lexicon[, 2]=="disgust")), 
+                   fear=length(which(lexicon[, 2]=="fear")), 
+                   joy=length(which(lexicon[, 2]=="joy")),
+                   sadness=length(which(lexicon[, 2]=="sadness")), 
+                   surprise=length(which(lexicon[, 2]=="surprise")), total=nrow(lexicon))
+    #initialize an empty vector to store overall results 
+    documents <- c()
+
+    #run a for loop through the text DTM
+    for (i in 1:nrow(matrix)) {
+
+      #if chose the voting system algorithm, simply print out the document
+        if (verbose) print(paste("DOCUMENT",i))
+
+      #set initial score for each category to 0 
+        scores <- list(anger=0, disgust=0, fear=0, joy=0, sadness=0, surprise=0)
+        #select the text element from the matrix
+        doc <- matrix[i,]
+        #find words with the highest tf.idf scores (words with high importance to the document)
+        words <- findFreqTerms(doc,lowfreq=1)
+
+        #set number of words for each emotion to 0 
+        numanger <- 0
+        numdisgust <- 0
+        numfear <- 0
+        numjoy <- 0
+        numsad <- 0
+        numsurprise <- 0
+
+        #scan through all words in the text 
+        for (word in words) {
+                #scan through each category/emotion 
+            for (key in names(scores)) {
+                #choose the list of words that belong to one particular category
+                emotions <- lexicon[which(lexicon[,2]==key),]
+                #match word from the text with that list of words from the lexicon
+                index <- pmatch(word,emotions[,1],nomatch=0)
+                #if index > 0, which means there is a match 
+                if (index > 0) {
+                    #save the word and its category into entry 
+                    entry <- emotions[index,]
+
+                    #extract category 
+                    category <- as.character(entry[[2]])
+                    #find the number of words of that category in the lexicon 
+                    count <- counts[[category]]
+
+                    #update number of word of each category 
+                    if (category=="anger") numanger <- numanger+1
+                    if (category=="disgust") numdisgust <- numdisgust+1
+                    if (category=="fear") numfear <- numfear+1
+                    if (category=="joy") numjoy <- numjoy+1
+                    if (category=="sadness") numsad <- numsad+1
+                    if (category=="surprise") numsurprise <- numsurprise+1
+
+                    #initialize score to be 1 
+                    score <- 1.0
+                    #if use bayes, score for each word in the class is the logarithm of P(d_i|C=c_i)
+                    if (algorithm=="bayes") score <- abs(log(score/count))
+
+                    #if use voting system, score for each word in the class is just 1.0 
+                    if (verbose) {
+                        print(paste("WORD:", word,"CAT:", category, "SCORE:", score))
+                    }
+                    #add up these scores 
+                    scores[[category]] <- scores[[category]]+score
+                }
+            }
+        }
+
+            #if use bayes, score of the class is the logarithm of P(C=c_i)
+        if (algorithm=="bayes") {
+            for (key in names(scores)) {
+                #count number of words of a specific class in the lexicon
+                count <- counts[[key]]
+                #count total number of words in the lexicon
+                total <- counts[["total"]]
+                #calculate class probability and take logarithm
+                score <- abs(log(count/total))
+                #update total score 
+                scores[[key]] <- scores[[key]]+score
+            }
+        } else {
+          #otherwise, if use voting system, score of the class is basically 0
+            for (key in names(scores)) {
+                scores[[key]] <- scores[[key]]+0.000001
+            }
+        }
+
+            #the predicted output for the text is the class with highest score
+        best_fit <- names(scores)[which.max(unlist(scores))]
+        #if the predicted class is disgust 
+        #and the difference between the class' score and 3.09234 is smaller than 0.01, 
+        #the output is reclassified to NA 
+        if (best_fit == "disgust" && as.numeric(unlist(scores[2]))-3.09234 < .01) best_fit <- NA
+
+    #combine the summary statistics together    
+        documents <- rbind(documents,c(numanger, numdisgust, numfear, numjoy, numsad, numsurprise,
+                                       scores$anger, scores$disgust, scores$fear, scores$joy,
+                                       scores$sadness, scores$surprise, best_fit))
+    }
+
+    #rename columns
+    colnames(documents) <- c("# ANGER", "# DISGUST", "# FEAR", "# JOY", "# SADNESS", 
+                             "# SURPRISE", "ANGER SCORE", "DISGUST SCORE", "FEAR SCORE", 
+                             "JOY SCORE", "SADNESS SCORE", "SURPRISE SCORE", "BEST_FIT")
+    #return result
+    return(documents)
+}
+```
+
+```{r}
+#Polarity classification
+classify_polarity <- function(textColumns, algorithm="bayes", pstrong=0.5, pweak=1.0, 
+                              verbose=FALSE,...) {
+    #tidy up input text and transform it into a DTM 
+  matrix <- create_matrix(textColumns,...)
+  #import the subjectivity lexicon
+    lexicon <- read.csv("subjectivity.csv",header=FALSE)
+
+    #create a list of number of words that belong to each category
+    counts <- list(positive=length(which(lexicon[,3]=="positive")), 
+                   negative=length(which(lexicon[,3]=="negative")), total=nrow(lexicon))
+
+    #initialize an empty vector to store overall results 
+    documents <- c()
+
+    #run a for loop through the text DTM
+    for (i in 1:nrow(matrix)) {
+
+      #if chose the voting system algorithm, simply print out the document
+        if (verbose) print(paste("DOCUMENT",i))
+
+      #set initial score for each category to 0 
+        scores <- list(positive=0, negative=0)
+        #select the text element from the matrix
+        doc <- matrix[i,]
+        #find words with the highest tf.idf scores (words with high importance to the document)
+        words <- findFreqTerms(doc, lowfreq=1)
+
+        #set number of words for each polar to 0 
+        numpos <- 0
+        numneg <- 0 
+
+        #scan through all words in the text 
+        for (word in words) {
+          #match word from the text with the whole list of words in the lexicon
+            index <- pmatch(word,lexicon[,1], nomatch=0)
+            #if there's a match, which means the word in the text appears in the lexicon
+            if (index > 0) {
+              #save the index of the match 
+                entry <- lexicon[index,]
+                #extract its subjectivity (strong or weak)
+                polarity <- as.character(entry[[2]])
+                #extract its polar (negative or positive)
+                category <- as.character(entry[[3]])
+                #find number of words of this polar in the lexicon 
+                count <- counts[[category]]
+
+        #update number of word of each polar 
+                if (category=="positive") numpos <- numpos+1
+                if (category=="negative") numneg <- numneg+1 
+
+                #weak subjective word has weight of 1   
+                score <- pweak
+                        #strong subjective word has weight of 0.5
+                if (polarity == "strongsubj") score <- pstrong
+                #if use bayes, score for each word in the class is the logarithm of P(d_i|C=c_i) 
+                if (algorithm=="bayes") score <- abs(log(score/count))
+
+                #if use voting system, score for each word in the class is just 1 for weak subjective
+                #and 0.5 for strong subjective
+                if (verbose) {
+                    print(paste("WORD:",word,"CAT:",category,"POL:",polarity,"SCORE:",score))
+                }
+
+        #add up these scores 
+                scores[[category]] <- scores[[category]]+score
+            }       
+        }
+
+    #if use bayes, score of the class is the logarithm of P(C=c_i)
+        if (algorithm=="bayes") {
+            for (key in names(scores)) {
+              #count number of words of a specific class in the lexicon
+                count <- counts[[key]]
+                #count total number of words in the lexicon
+                total <- counts[["total"]]
+                #calculate class probability and take logarithm
+                score <- abs(log(count/total))
+                #update total score
+                scores[[key]] <- scores[[key]]+score
+            }
+        } else {
+          #otherwise, if use voting system, score of the class is basically 0
+            for (key in names(scores)) {
+                scores[[key]] <- scores[[key]]+0.000001
+            }
+        }
+            #the predicted output for the text is the class with highest score
+        best_fit <- names(scores)[which.max(unlist(scores))]
+        #calculate ratio between score for positive and score for negative
+        ratio <- as.integer(abs(scores$positive/scores$negative))
+        #if ratio=1, predicted output is neutral 
+        if (ratio==1) best_fit <- "neutral"
+    #combine summary statistics    
+        documents <- rbind(documents, c(numpos, numneg, scores$positive, scores$negative,
+                                        abs(scores$positive/scores$negative), best_fit))
+        if (verbose) {
+            print(paste("POS:", scores$positive, "NEG:",scores$negative, "RATIO:",
+                        abs(scores$positive/scores$negative)))
+            cat("\n")
+        }
+    }
+
+    #rename columns
+    colnames(documents) <- c("#POS","#NEG","POS SCORE","NEG SCORE","POS/NEG","BEST_FIT")
+    #return results 
+    return(documents)
+}
+```

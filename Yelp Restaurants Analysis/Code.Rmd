@@ -1,0 +1,113 @@
+---
+title: "SDS293 (Machine Learning): Final Project"
+author: "Tam Tran The"
+date: ""
+output: 
+  pdf_document:
+    fig_height: 3
+    fig_width: 5
+  html_document:
+    fig_height: 3
+    fig_width: 5
+  word_document:
+    fig_height: 3
+    fig_width: 5
+---
+
+```{r, setup, include=FALSE}
+require(mosaic)
+require(dplyr)
+require(randomForest)
+require(rpart)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+trellis.par.set(theme=theme.mosaic()) # change default color scheme for lattice
+knitr::opts_chunk$set(
+  tidy=FALSE,     # display code as typed
+  size="small")   # slightly smaller font for code
+```
+
+```{r}
+library(rjson)
+library(jsonlite)
+path <- "/Users/tamtranthe/Downloads/yelp_dataset_challenge_academic_dataset/yelp_academic_dataset_business.json"
+business <- stream_in(file(path), pagesize = 100)
+```
+
+```{r warning=FALSE}
+attributes <- business$attributes 
+good_for <- attributes$`Good For`
+colnames(good_for) <- paste("Good for", colnames(good_for), sep=": ")
+ambience <- attributes$Ambience
+colnames(ambience) <- paste("Ambience", colnames(ambience), sep=": ")
+music <- attributes$Music
+colnames(music) <- paste("Music", colnames(music), sep=": ")
+diet <- attributes$`Dietary Restrictions`
+colnames(diet) <- paste("Dietary Restrictions", colnames(diet), sep=": ")
+parking <- attributes$Parking
+colnames(parking) <- paste("Parking", colnames(parking), sep=": ")
+attributes <- attributes %>%
+  select(-c(`Good For`, Ambience, Music, `Hair Types Specialized In`, 
+            `Dietary Restrictions`, `Parking`))
+others <- business %>% 
+  select(stars, city, state)
+df <- cbind(others, attributes, good_for, ambience, music, diet, parking)
+df <- df %>% 
+  mutate(class = ifelse(stars >= 3, "good", "bad")) %>%
+  select(-c(stars, city, `Accepts Insurance`))
+df[is.na(df)] <- 'MISSING'
+df[] <- lapply(df, factor)
+
+df_us <- df %>%
+  filter(state == c("PA", "NC", "SC", "WI", "IL", "AZ", "CA", "NV", "FL", "NM", "TX",
+                    "MN", "AL", "AK"))
+df_intl <- df %>%
+  filter(state == c("BW", "EDH", "ELN", "FIF", "HAM", "KHL", "MLN", "NTH", "NW", "ON",
+                    "QC", "RP", "SCB", "TAM", "XGL"))
+```
+
+```{r}
+set.seed(1995)
+train_sample <- sample(nrow(df_us), size=nrow(df_us)*0.66)
+train <- df[train_sample,]
+test <- df[-train_sample,]
+rf <- randomForest(y=train$class, x=train[,-ncol(train)], ytest=test$class,
+                   xtest=test[,-ncol(test)], ntree=100, mtry=21, keep.forest = TRUE)
+importance(rf)
+varImpPlot(rf, n.var=1, main="Variable Importance Plot of Attributes of Restaurants in the US")
+```
+
+```{r}
+set.seed(1995)
+train_sample2 <- sample(nrow(df_intl), size=nrow(df_intl)*0.66)
+train2 <- df[train_sample2,]
+test2 <- df[-train_sample2,]
+rf2 <- randomForest(y=train2$class, x=train2[,-ncol(train2)], ytest=test2$class,
+                    xtest=test2[,-ncol(test2)], ntree=100, mtry=21, keep.forest = TRUE)
+importance(rf2) 
+varImpPlot(rf2, n.var=10, main="Variable Importance Plot of Attributes of Restaurants outside the US")
+```
+
+```{r}
+set.seed(1995)
+bag_us <- randomForest(y=train$class, x=train[,-ncol(train)], ytest=test$class,
+                   xtest=test[,-ncol(test)], ntree=100, mtry=63, keep.forest=TRUE)
+importance(bag_us)
+varImpPlot(bag_us)
+
+bag_intl <- randomForest(y=train2$class, x=train2[,-ncol(train)], ytest=test2$class,
+                   xtest=test2[,-ncol(test2)], ntree=100, mtry=63, keep.forest=TRUE)
+importance(bag_intl)
+varImpPlot(bag_intl)
+```
+
+```{r}
+missing_df <- data.frame(matrix(nrow=30))
+missing_df$state <- sort(unique(df$state))
+for (i in 2:63){
+  x <- aggregate(df[,i]~state, data=df, function(x) {sum(x=="MISSING")})[,2]
+  missing_df <- cbind(missing_df, x)
+}
+missing_df <- missing_df[,-1]
+colnames(missing_df) <- colnames(df)[-64]
+```
