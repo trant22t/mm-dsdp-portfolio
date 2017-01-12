@@ -10,3 +10,8 @@ Based on Yelp Business Dataset, this project studies the determinants of high-qu
 
 Collaborated with Lily Rithichoo (Smith SDS293)
 
+#Emily Dickinson Poetry Analysis 
+The project utilizes text mining methods and the idea of cosine similarity to draw comparisons between different poems by Emily Dickinson.
+
+Shiny app: https://r.amherst.edu/apps/m5ttranthe/Dickinson/
+
