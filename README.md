@@ -2,7 +2,7 @@
 This project, inspired by the 'sentiment' package by Timothy Jurka, sought to explore how sentiment analysis is used to summarize the opinions and attitudes of Amazon consumers. Reviews are splitted into their polarity, either positive, negative, or neutral, as well their dominant emotion, like sad or fearful. 
 
 Shiny app: https://r.amherst.edu/apps/m5ttranthe/Amazon%20sentiment%20analysis/
-
+Github link: https://github.com/trant22t/portfolio/tree/master/Sentiment%20Analysis%20of%20Amazon%20Reviews
 Collaborated with Jordan Browning (Amherst STAT495)
 
 #Yelp Restaurant Analysis
