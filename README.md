@@ -49,5 +49,9 @@ Also exploring the College Scorecard dataset, the project delves into which vari
 
 Github link: https://github.com/trant22t/portfolio/tree/master/College%20ScoreCard%20Analysis%202
 
+# Mini assignments
 
+The folder includes some assignments that display my familiarity with SQL, data scraping, unsupervised learning, and etc.
+ 
+Github link: https://github.com/trant22t/portfolio/tree/master/Mini%20Assignments
 
