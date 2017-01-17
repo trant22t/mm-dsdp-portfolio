@@ -26,3 +26,12 @@ Employing the fixed-effects estimationation method, this project analyzes how ec
 
 Github link: https://github.com/trant22t/portfolio/tree/master/Determinants%20of%20Inbound%20Tourism
 
+Collaborated with Thu Tran (Mount Holyoke ECON320)
+
+# DataFest 2016 
+The presentation includes insights that my teammates and I extracted from Ticketmaster dataset over a weekend and presented at Five College DataFest 2016. My team won the Best Business Recommendation Prize. (language used: R)
+
+Github link: https://github.com/trant22t/portfolio/tree/master/DataFest%202016
+
+Collaborated with Cheng-Yin Eng, Zollie Yavarow, Emma Sweeting and Erin Mullin (Mount Holyoke Math/Stat Department)
+
