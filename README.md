@@ -35,3 +35,19 @@ Github link: https://github.com/trant22t/portfolio/tree/master/DataFest%202016
 
 Collaborated with Cheng-Yin Eng, Zollie Yavarow, Emma Sweeting and Erin Mullin (Mount Holyoke Math/Stat Department)
 
+# College Scorecard Analysis 1 
+
+Using College Scorecard dataset, this mini-project attempts to predict the relationship between average faculty salary and student retention rate by employing the tools of visualization. 
+
+Github link: https://github.com/trant22t/portfolio/tree/master/College%20ScoreCard%20Analysis%201
+
+Collaborated with Stephany Flores-Ramos and Olivia Xu (Amherst STAT495)
+
+# College Scorecard Analysis 2 
+
+Also exploring the College Scorecard dataset, the project delves into which variables are the important predictors of student debt after graduation. 
+
+Github link: https://github.com/trant22t/portfolio/tree/master/College%20ScoreCard%20Analysis%202
+
+
+
